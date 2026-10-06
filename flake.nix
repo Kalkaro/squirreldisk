@@ -20,24 +20,46 @@
         inherit pname version src;
       };
 
-      squirreldisk = pkgs.appimageTools.wrapType2 {
-        inherit pname version src;
+      squirreldisk = pkgs.stdenvNoCC.mkDerivation {
+        inherit pname version;
+        src = appimageContents;
 
-        # Match xkbcommon to the X11 Compose data provided by the Nix environment.
-        profile = ''
-          export LD_LIBRARY_PATH="${
-            pkgs.lib.makeLibraryPath [ pkgs.libxkbcommon ]
-          }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-        '';
+        strictDeps = true;
+        nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+        buildInputs = [
+          pkgs.alsa-lib
+          pkgs.stdenv.cc.cc.lib
+        ];
 
-        extraInstallCommands = ''
-          install -Dm444 ${appimageContents}/squirreldisk.desktop \
+        # Patch the native binary instead of creating an FHS environment, whose
+        # bind mounts would otherwise appear as disks. These libraries use dlopen.
+        runtimeDependencies = with pkgs; [
+          libGL
+          libx11
+          libxcursor
+          libxi
+          libxrandr
+          libxinerama
+          libxkbcommon
+          wayland
+        ];
+
+        dontConfigure = true;
+        dontBuild = true;
+
+        installPhase = ''
+          runHook preInstall
+
+          install -Dm755 usr/bin/squirreldisk $out/bin/squirreldisk
+          install -Dm444 squirreldisk.desktop \
             $out/share/applications/squirreldisk.desktop
           substituteInPlace $out/share/applications/squirreldisk.desktop \
             --replace-fail 'Exec=squirreldisk' "Exec=$out/bin/squirreldisk"
 
-          install -Dm444 ${appimageContents}/squirreldisk.png \
+          install -Dm444 squirreldisk.png \
             $out/share/icons/hicolor/256x256/apps/squirreldisk.png
+
+          runHook postInstall
         '';
 
         meta = {
