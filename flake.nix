@@ -20,12 +20,33 @@
         inherit pname version src;
       };
 
+      # v2.5.0 passes fontconfig's index straight to its font parser. FreeType
+      # stores a variable font's named instance in the upper bits; the parser
+      # only accepts the collection face index in the lower 16 bits.
+      fontMatcher = pkgs.writeShellScriptBin "fc-match" ''
+        if [[ "$#" -eq 3 && "$1" == -f && "$2" == $'%{file}\n%{index}' ]]; then
+          match="$(${pkgs.lib.getExe' pkgs.fontconfig "fc-match"} "$@")" || exit "$?"
+          fontFile="''${match%$'\n'*}"
+          fontIndex="''${match##*$'\n'}"
+          if [[ "$fontIndex" =~ ^[0-9]+$ ]]; then
+            printf '%s\n%d' "$fontFile" "$((fontIndex & 65535))"
+          else
+            printf '%s' "$match"
+          fi
+        else
+          exec ${pkgs.lib.getExe' pkgs.fontconfig "fc-match"} "$@"
+        fi
+      '';
+
       squirreldisk = pkgs.stdenvNoCC.mkDerivation {
         inherit pname version;
         src = appimageContents;
 
         strictDeps = true;
-        nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+        nativeBuildInputs = [
+          pkgs.autoPatchelfHook
+          pkgs.makeWrapper
+        ];
         buildInputs = [
           pkgs.alsa-lib
           pkgs.stdenv.cc.cc.lib
@@ -60,6 +81,11 @@
             $out/share/icons/hicolor/256x256/apps/squirreldisk.png
 
           runHook postInstall
+        '';
+
+        postFixup = ''
+          wrapProgram $out/bin/squirreldisk \
+            --prefix PATH : ${fontMatcher}/bin
         '';
 
         meta = {
